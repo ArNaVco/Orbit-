@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% from "_ui.html" import avatar %}
+{% block title %}{{ ctx.name('scheduling', 'Schedule') }}{% endblock %}
+{% block content %}
+<div class="page-h"><div><h1>{{ ctx.name('scheduling', 'Schedule') }}</h1><p class="muted">Calendar in {{ ctx.business.timezone }}.</p></div></div>
+<div class="grid" style="grid-template-columns:minmax(0,1fr) 300px" id="sched-grid">
+  <div class="card" style="padding:14px">
+    <div class="row wrap mb">
+      {% if perms.view == 'ALL' %}<div class="row gap-xs" style="border:1px solid var(--border);border-radius:6px;padding:2px">
+        <button class="btn btn-sm btn-secondary" id="v-biz" onclick="setMine(false)">Business calendar</button><button class="btn btn-sm btn-ghost" id="v-mine" onclick="setMine(true)">My calendar</button></div>{% endif %}
+      <div class="row wrap gap-xs">{% for name, color in EVENT_CATEGORIES %}<button class="chip on" data-cat="{{ name }}" onclick="toggleCat(this)"><span style="width:8px;height:8px;border-radius:50%;background:{{ color }}"></span>{{ name }}</button>{% endfor %}</div>
+      {% if perms.create %}<button class="btn btn-primary btn-sm ml-auto" onclick="openForm()"><i data-lucide="plus"></i>New event</button>{% endif %}
+    </div>
+    <div id="calendar"></div>
+  </div>
+  <div class="col" style="gap:16px">
+    <div class="card"><div class="card-h"><div><h3>Upcoming for you</h3><p class="xs muted">Next 14 days</p></div></div><ul class="list" id="upcoming"><li class="small muted">Loading…</li></ul></div>
+    {% if perms.view == 'ALL' %}
+    <div class="card"><div class="card-h"><h3>Team availability</h3><input class="input" type="date" id="avail-date" style="height:30px;width:150px"></div><ul class="list" id="avail" style="max-height:340px;overflow-y:auto"></ul></div>
+    {% endif %}
+  </div>
+</div>
+
+<dialog id="ev-view">
+  <div class="d-h"><div><h2 id="vw-title"></h2><div class="row wrap gap-xs" id="vw-badges" style="margin-top:4px"></div></div><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b col" style="gap:10px" id="vw-body"></div>
+  <div class="d-f" id="vw-actions"></div>
+</dialog>
+
+<dialog id="ev-form" class="lg"><form id="evf">
+  <div class="d-h"><h2 id="evf-title">New event</h2><button type="button" class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field span2"><label>Title <span class="req">*</span></label><input class="input" name="title" required maxlength="140"></div>
+    <div class="field"><label>Category</label><select class="input" name="category">{% for name, color in EVENT_CATEGORIES %}<option data-color="{{ color }}">{{ name }}</option>{% endfor %}</select></div>
+    <label class="row small" style="align-self:end;padding-bottom:8px"><input type="checkbox" name="allDay" onchange="syncAllDay()">All day</label>
+    <div class="field"><label>Starts <span class="req">*</span></label><input class="input" name="start" type="datetime-local" required></div>
+    <div class="field"><label>Ends <span class="req">*</span></label><input class="input" name="end" type="datetime-local" required></div>
+    <div class="field"><label>Repeats</label><select class="input" name="recurrence" onchange="document.getElementById('until-wrap').style.visibility=this.value==='NONE'?'hidden':'visible'"><option value="NONE">Does not repeat</option><option value="DAILY">Daily</option><option value="WEEKLY">Weekly</option><option value="MONTHLY">Monthly</option></select></div>
+    <div class="field" id="until-wrap" style="visibility:hidden"><label>Until (optional)</label><input class="input" type="date" name="until"></div>
+    <div class="field"><label>Location</label><input class="input" name="location"></div>
+    <div class="field"><label>Reminder</label><select class="input" name="reminderMinutes"><option value="">None</option><option value="0">At start</option><option value="15">15 min before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></div>
+    <div class="field"><label>Visibility</label><select class="input" name="visibility"><option value="BUSINESS">Business calendar</option><option value="PERSONAL">Personal (only me & assignees)</option></select></div>
+    <div class="field"><label>Assign to department / team</label><select class="input" name="department"><option value="">—</option>{% for d in departments %}<option>{{ d }}</option>{% endfor %}</select></div>
+    <div class="field span2"><label>Assign to people</label>
+      <div class="row wrap gap-xs" style="border:1px solid var(--border);border-radius:6px;padding:8px;max-height:150px;overflow-y:auto">
+        {% for m in members %}<label class="chip" data-uid="{{ m.id }}"><input type="checkbox" value="{{ m.id }}" class="assignee" hidden onchange="this.parentNode.classList.toggle('on',this.checked)">{{ avatar(m.name, 16) }}{{ m.name }}</label>{% endfor %}
+      </div></div>
+    <div class="field span2"><label>Description</label><textarea class="input" name="description"></textarea></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary" id="evf-submit">Create</button></div>
+</form></dialog>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.5.0/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fullcalendar/luxon3@6.1.15/index.global.min.js"></script>
+<script>
+const TZ = {{ ctx.business.timezone|tojson }}, CAN_CREATE = {{ perms.create|tojson }}, CAN_VIEW_ALL = {{ (perms.view == 'ALL')|tojson }};
+let mine = !CAN_VIEW_ALL, hidden = new Set(), editing = null;
+if (window.matchMedia('(max-width: 1100px)').matches) document.getElementById('sched-grid').style.gridTemplateColumns = '1fr';
+const DT = luxon.DateTime;
+const fmt = (iso, opts) => new Date(iso).toLocaleString('en-US', {timeZone: TZ, ...opts});
+const toLocalInput = (iso, dateOnly) => { const d = DT.fromISO(iso).setZone(TZ); return dateOnly ? d.toFormat('yyyy-LL-dd') : d.toFormat("yyyy-LL-dd'T'HH:mm"); };
+const fromLocalInput = s => DT.fromISO(s, {zone: TZ}).toUTC().toISO();
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+  initialView: 'dayGridMonth', timeZone: TZ, height: 'auto', dayMaxEvents: 3, nowIndicator: true, selectable: CAN_CREATE,
+  headerToolbar: {left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek'},
+  buttonText: {today: 'Today', month: 'Month', week: 'Week', day: 'Day', list: 'List'},
+  events: async (info, ok, fail) => {
+    try { const d = await api(`/api/schedules?from=${encodeURIComponent(info.startStr)}&to=${encodeURIComponent(info.endStr)}${mine ? '&mine=1' : ''}`);
+      ok(d.events.filter(e => !hidden.has(e.category)).map(e => ({id: e.id, title: (e.recurrence !== 'NONE' ? '↻ ' : '') + e.title, start: e.start, end: e.end, allDay: e.allDay, backgroundColor: e.color, borderColor: e.color, extendedProps: e})));
+    } catch (e) { fail(e); }
+  },
+  select: s => openForm(null, s.start.toISOString(), s.allDay ? new Date(s.end.getTime() - 86400000).toISOString() : s.end.toISOString(), s.allDay),
+  eventClick: a => openView(a.event.extendedProps),
+});
+calendar.render();
+function setMine(v){ mine = v; document.getElementById('v-mine').className = 'btn btn-sm ' + (v ? 'btn-secondary' : 'btn-ghost'); document.getElementById('v-biz').className = 'btn btn-sm ' + (v ? 'btn-ghost' : 'btn-secondary'); calendar.refetchEvents(); }
+function toggleCat(b){ const c = b.dataset.cat; hidden.has(c) ? hidden.delete(c) : hidden.add(c); b.classList.toggle('on'); calendar.refetchEvents(); }
+
+function openView(e){
+  document.getElementById('vw-title').textContent = e.title;
+  document.getElementById('vw-badges').innerHTML = `<span class="badge">${esc(e.category)}</span>` + (e.visibility === 'PERSONAL' ? '<span class="badge">Personal</span>' : '') + (e.recurrence !== 'NONE' ? `<span class="badge b-indigo">↻ ${esc(e.recurrence.toLowerCase())}</span>` : '');
+  const when = e.allDay ? fmt(e.start, {dateStyle: 'full'}) : `${fmt(e.start, {dateStyle: 'full', timeStyle: 'short'})} – ${fmt(e.end, {timeStyle: 'short'})}`;
+  document.getElementById('vw-body').innerHTML = `<p class="row"><i data-lucide="calendar-clock" class="muted"></i>${esc(when)}</p>` +
+    (e.location ? `<p class="row"><i data-lucide="map-pin" class="muted"></i>${esc(e.location)}</p>` : '') +
+    (e.assignees.length || e.department ? `<p class="row" style="align-items:flex-start"><i data-lucide="users" class="muted"></i><span>${e.department ? `<span class="badge b-blue">${esc(e.department)} team</span> ` : ''}${esc(e.assignees.map(a => a.name).join(', '))}</span></p>` : '') +
+    (e.description ? `<p class="muted" style="white-space:pre-wrap">${esc(e.description)}</p>` : '') +
+    `<p class="xs muted">Created by ${esc(e.createdBy?.name || '—')}${e.reminderMinutes != null ? ` · reminder ${e.reminderMinutes} min before` : ''}${e.recurrenceUntil ? ` · repeats until ${fmt(e.recurrenceUntil, {dateStyle: 'medium'})}` : ''}</p>`;
+  const act = document.getElementById('vw-actions'); act.innerHTML = '';
+  if (e.canDelete) { const b = mk('Delete', 'btn btn-ghost text-red', async () => { if (!confirm('Delete the whole series for everyone? Use Cancel event to keep it visible as cancelled.')) return; await api('/api/schedules/' + e.scheduleId, {method: 'DELETE'}); toast('Event deleted', 'success'); close('ev-view'); refresh(); }); b.style.marginRight = 'auto'; act.appendChild(b); }
+  if (e.canEdit) { act.appendChild(mk('Cancel event', 'btn btn-secondary', async () => { await api('/api/schedules/' + e.scheduleId, {body: {cancel: true}}); toast('Event cancelled', 'success'); close('ev-view'); refresh(); }));
+    act.appendChild(mk('Edit', 'btn btn-primary', () => { close('ev-view'); openForm(e); })); }
+  document.getElementById('ev-view').showModal(); lucide.createIcons();
+}
+function mk(label, cls, fn){ const b = document.createElement('button'); b.className = cls; b.textContent = label; b.onclick = fn; return b; }
+function close(id){ document.getElementById(id).close(); }
+function refresh(){ calendar.refetchEvents(); loadUpcoming(); if (CAN_VIEW_ALL) loadAvail(); }
+
+const F = document.getElementById('evf');
+function syncAllDay(){ const ad = F.allDay.checked; ['start', 'end'].forEach(n => { const v = F[n].value; F[n].type = ad ? 'date' : 'datetime-local'; if (v) F[n].value = ad ? v.slice(0, 10) : (v.length === 10 ? v + 'T09:00' : v); }); }
+function openForm(e, startIso, endIso, allDay){
+  editing = e || null; F.reset();
+  document.getElementById('evf-title').textContent = e ? 'Edit event' : 'New event';
+  document.getElementById('evf-submit').textContent = e ? 'Save' : 'Create';
+  const s = e ? e.seriesStart : (startIso || new Date(Math.ceil(Date.now() / 3600000) * 3600000).toISOString());
+  const en = e ? e.seriesEnd : (endIso || new Date(new Date(s).getTime() + 3600000).toISOString());
+  F.allDay.checked = e ? e.allDay : !!allDay;
+  F.start.type = F.end.type = F.allDay.checked ? 'date' : 'datetime-local';
+  F.start.value = toLocalInput(s, F.allDay.checked); F.end.value = toLocalInput(en, F.allDay.checked);
+  if (e) { F.title.value = e.title; F.category.value = e.category; F.recurrence.value = e.recurrence; F.location.value = e.location || ''; F.reminderMinutes.value = e.reminderMinutes ?? '';
+    F.visibility.value = e.visibility; F.department.value = e.department || ''; F.description.value = e.description || ''; F.until.value = e.recurrenceUntil ? toLocalInput(e.recurrenceUntil, true) : ''; }
+  document.getElementById('until-wrap').style.visibility = F.recurrence.value === 'NONE' ? 'hidden' : 'visible';
+  document.querySelectorAll('.assignee').forEach(c => { c.checked = !!(e && e.assignees.some(a => a.id === c.value)); c.parentNode.classList.toggle('on', c.checked); });
+  document.getElementById('ev-form').showModal();
+}
+F.addEventListener('submit', async ev => {
+  ev.preventDefault();
+  const ad = F.allDay.checked;
+  let start = fromLocalInput(ad ? F.start.value + 'T00:00' : F.start.value), end = fromLocalInput(ad ? F.end.value + 'T23:59' : F.end.value);
+  const body = {title: F.title.value, category: F.category.value, color: F.category.selectedOptions[0].dataset.color, startAt: start, endAt: end, allDay: ad,
+    recurrence: F.recurrence.value, recurrenceUntil: F.recurrence.value !== 'NONE' && F.until.value ? fromLocalInput(F.until.value + 'T23:59') : null,
+    location: F.location.value, reminderMinutes: F.reminderMinutes.value, visibility: F.visibility.value, department: F.department.value,
+    description: F.description.value, assigneeIds: [...document.querySelectorAll('.assignee:checked')].map(c => c.value)};
+  try { if (editing) await api('/api/schedules/' + editing.scheduleId, {body}); else await api('/api/schedules', {body});
+    toast(editing ? 'Event updated' : 'Event created', 'success'); close('ev-form'); refresh(); } catch (e) {}
+});
+
+async function loadUpcoming(){
+  const now = new Date(), to = new Date(now.getTime() + 14 * 86400000);
+  const ul = document.getElementById('upcoming');
+  try { const d = await api(`/api/schedules?from=${now.toISOString()}&to=${to.toISOString()}&mine=1`, {silent: true});
+    const evs = d.events.sort((a, b) => new Date(a.start) - new Date(b.start)).slice(0, 8);
+    ul.innerHTML = evs.length ? '' : '<li class="empty small">Nothing scheduled</li>';
+    evs.forEach(e => { const li = document.createElement('li'); li.className = 'row'; li.style.cursor = 'pointer'; li.onclick = () => openView(e);
+      li.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:${esc(e.color)};flex-shrink:0"></span><span style="min-width:0"><span class="bold trunc" style="display:block">${esc(e.title)}</span><span class="xs muted">${esc(fmt(e.start, e.allDay ? {weekday:'short', month:'short', day:'numeric'} : {weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}))}</span></span>`;
+      ul.appendChild(li); });
+  } catch (e) { ul.innerHTML = ''; }
+}
+async function loadAvail(){
+  const inp = document.getElementById('avail-date'); if (!inp.value) inp.value = DT.now().setZone(TZ).toFormat('yyyy-LL-dd');
+  const ul = document.getElementById('avail'); ul.innerHTML = '<li class="small muted">Loading…</li>';
+  try { const d = await api('/api/schedules/availability?date=' + inp.value, {silent: true});
+    ul.innerHTML = d.people.map(p => `<li><div class="row between"><span>${esc(p.name)}</span>${p.onLeave ? '<span class="badge b-indigo">On leave</span>' : p.events.length ? `<span class="badge b-amber">${p.events.length} event${p.events.length > 1 ? 's' : ''}</span>` : '<span class="badge b-green">Free</span>'}</div>${p.events.map(e => `<div class="xs muted row gap-xs"><span style="width:6px;height:6px;border-radius:50%;background:${esc(e.color)}"></span>${esc(e.time)} · ${esc(e.title)}</div>`).join('')}</li>`).join('');
+  } catch (e) { ul.innerHTML = ''; }
+}
+loadUpcoming();
+if (CAN_VIEW_ALL) { loadAvail(); document.getElementById('avail-date').addEventListener('change', loadAvail); }
+</script>
+{% endblock %}

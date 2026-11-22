@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf %}
+{% block title %}{{ {'login':'Sign in','register':'Create account','register_business':'Register business','forgot':'Forgot password','reset':'Reset password'}.get(mode, 'Orbit') }}{% endblock %}
+{% block bare %}
+<div class="auth">
+  <div class="auth-hero">
+    <a href="/" class="row bold" style="font-size:18px"><i data-lucide="orbit"></i> Orbit</a>
+    <div style="max-width:440px">
+      <p style="font-size:30px;font-weight:600;line-height:1.2;letter-spacing:-.02em">One platform. Every business, configured exactly the way it works.</p>
+      <p class="mt" style="color:rgba(255,255,255,.7)">Attendance, scheduling, custom modules, approvals and audit trails — switched on per workspace, permissioned per role.</p>
+    </div>
+    <p class="xs" style="color:rgba(255,255,255,.5)">© Orbit</p>
+  </div>
+  <div class="auth-form">
+    <button class="icon-btn" style="position:absolute;top:16px;right:16px" onclick="toggleTheme()" aria-label="Toggle theme"><i data-lucide="sun-moon"></i></button>
+    <div style="width:100%;max-width:360px">
+    {% if mode == 'message' %}
+      <div style="text-align:center">
+        <i data-lucide="{{ 'check-circle-2' if ok else 'x-circle' }}" style="width:40px;height:40px;color:{{ 'var(--green)' if ok else 'var(--red)' }}"></i>
+        <h1 class="mt">{{ title }}</h1><p class="muted mt">{{ message }}</p>
+        <a href="{{ url_for('login') }}" class="link mt" style="display:inline-block">Go to sign in</a>
+      </div>
+    {% elif mode == 'login' %}
+      <h1 style="font-size:24px">Sign in</h1>
+      <p class="muted mt" style="margin-top:6px">New here? <a class="link" href="{{ url_for('register_business') }}">Register your business</a></p>
+      <form method="post" class="col" style="gap:16px;margin-top:24px">{{ csrf() }}
+        <div class="field"><label>Email</label><input class="input" name="email" type="email" value="{{ email or '' }}" autocomplete="email" required autofocus></div>
+        <div class="field"><label>Password</label><input class="input" name="password" type="password" autocomplete="current-password" required></div>
+        <div class="row end" style="margin-top:-8px"><a href="{{ url_for('forgot_password') }}" class="small muted">Forgot password?</a></div>
+        <button class="btn btn-primary w-full" style="height:40px;justify-content:center">Sign in</button>
+      </form>
+      {% if unverified %}
+      <form method="post" action="{{ url_for('resend_verification') }}" class="small mt" style="border:1px solid color-mix(in srgb,var(--amber) 35%,transparent);background:color-mix(in srgb,var(--amber) 10%,transparent);border-radius:6px;padding:10px">{{ csrf() }}
+        <input type="hidden" name="email" value="{{ email }}">Please verify your email before signing in. <button class="link" style="border:0;background:none;padding:0;cursor:pointer;font:inherit">Resend verification email</button>
+      </form>
+      {% endif %}
+      <p class="small muted mt" style="text-align:center;margin-top:24px">Joining as an individual? <a class="link" href="{{ url_for('register') }}">Create a personal account</a></p>
+    {% elif mode in ['register', 'register_business'] %}
+      <h1 style="font-size:24px">{{ 'Register your business' if mode == 'register_business' else 'Create an account' }}</h1>
+      <p class="muted" style="margin-top:6px">Already have an account? <a class="link" href="{{ url_for('login') }}">Sign in</a></p>
+      <form method="post" class="col" style="gap:14px;margin-top:24px">{{ csrf() }}
+        <input type="hidden" name="timezone" id="tz">
+        {% if mode == 'register_business' %}
+        <div class="field"><label>Business name <span class="req">*</span></label><input class="input" name="businessName" required minlength="2"></div>
+        <div class="field"><label>Industry</label><select class="input" name="industry"><option value="">Select…</option>{% for i in ['Retail','Logistics','Healthcare','Hospitality','Manufacturing','Professional services','Education','Technology','Other'] %}<option>{{ i }}</option>{% endfor %}</select></div>
+        {% endif %}
+        <div class="field"><label>Your name <span class="req">*</span></label><input class="input" name="name" required minlength="2" autocomplete="name"></div>
+        <div class="field"><label>Email <span class="req">*</span></label><input class="input" name="email" type="email" required autocomplete="email"></div>
+        <div class="field"><label>Password <span class="req">*</span></label><input class="input" name="password" type="password" required minlength="8" autocomplete="new-password"><span class="hint">8+ characters with a letter and a number</span></div>
+        <div class="field"><label>Confirm password <span class="req">*</span></label><input class="input" name="confirm" type="password" required autocomplete="new-password"></div>
+        <button class="btn btn-primary w-full" style="height:40px;justify-content:center">{{ 'Create workspace' if mode == 'register_business' else 'Create account' }}</button>
+      </form>
+      <script>document.getElementById('tz').value=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'</script>
+    {% elif mode == 'forgot' %}
+      <h1 style="font-size:24px">Forgot password</h1><p class="muted" style="margin-top:6px">We'll email you a link to reset it.</p>
+      <form method="post" class="col" style="gap:16px;margin-top:24px">{{ csrf() }}
+        <div class="field"><label>Email</label><input class="input" name="email" type="email" required autofocus></div>
+        <button class="btn btn-primary w-full" style="height:40px;justify-content:center">Send reset link</button>
+      </form>
+      <p class="small mt" style="text-align:center"><a href="{{ url_for('login') }}" class="muted">Back to sign in</a></p>
+    {% elif mode == 'reset' %}
+      <h1 style="font-size:24px">Choose a new password</h1>
+      <form method="post" class="col" style="gap:16px;margin-top:24px">{{ csrf() }}<input type="hidden" name="token" value="{{ token }}">
+        <div class="field"><label>New password</label><input class="input" name="password" type="password" required minlength="8" autofocus><span class="hint">8+ characters with a letter and a number</span></div>
+        <div class="field"><label>Confirm password</label><input class="input" name="confirm" type="password" required></div>
+        <button class="btn btn-primary w-full" style="height:40px;justify-content:center">Update password</button>
+      </form>
+    {% endif %}
+    {% if google and mode == 'login' %}{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, avatar, status_badge, empty %}
+{% block title %}{{ ctx.name('attendance', 'Attendance') }}{% endblock %}
+{% block content %}
+{% set SHORT = {'PRESENT':'P','IN_PROGRESS':'•','ABSENT':'A','HALF_DAY':'H','LEAVE':'L'} %}
+<div class="page-h"><div><h1>{{ ctx.name('attendance', 'Attendance') }}</h1><p class="muted">Times shown in {{ ctx.business.timezone }}. Late after {{ ctx.business.workStartTime }} + {{ ctx.business.lateGraceMinutes }} min grace.</p></div></div>
+{% if can_check %}<div class="mb">{% include "_checkin.html" %}</div>{% endif %}
+<div class="tabs">
+  {% if team %}<a href="?tab=today" class="{{ 'on' if tab == 'today' }}">Today</a><a href="?tab=report" class="{{ 'on' if tab == 'report' }}">Monthly report</a>{% endif %}
+  <a href="?tab=history" class="{{ 'on' if tab == 'history' }}">My history</a><a href="?tab=corrections" class="{{ 'on' if tab == 'corrections' }}">Corrections</a>
+</div>
+
+{% if tab == 'today' and team %}
+<div class="card">
+  <form class="toolbar" method="get"><input type="hidden" name="tab" value="today">
+    {% set counts = {} %}{% for r in view.rows %}{% set s = r.cells[0].status %}{% set _ = counts.update({s: counts.get(s, 0) + 1}) %}{% endfor %}
+    <div class="row wrap gap-xs grow">{% for s, n in counts.items() %}{{ status_badge(s) }}<span class="small muted">{{ n }}</span>{% endfor %}</div>
+    {% if departments %}<select class="input" name="dept" style="max-width:180px" onchange="this.form.submit()"><option value="">All departments</option>{% for d in departments %}<option {{ 'selected' if d == dept }}>{{ d }}</option>{% endfor %}</select>{% endif %}
+  </form>
+  <div class="table-wrap"><table class="table"><thead><tr><th data-sort>Employee</th><th data-sort>Status</th><th>In</th><th>Out</th><th>Worked</th>{% if can_edit %}<th></th>{% endif %}</tr></thead><tbody>
+  {% for r in view.rows %}{% set c = r.cells[0] %}
+    <tr><td><span class="row">{{ avatar(r.name) }}{{ r.name }}</span></td>
+      <td><span class="row gap-xs">{{ status_badge(c.status) }}{% if c.rec and c.rec.isLate %}<span class="badge b-amber">Late {{ c.rec.lateMinutes }}m</span>{% endif %}</span></td>
+      <td>{{ c.rec.checkIn|local('%H:%M') if c.rec else '—' }}</td><td>{{ c.rec.checkOut|local('%H:%M') if c.rec else '—' }}</td>
+      <td>{{ fmt_minutes(c.rec.workMinutes) if c.rec and c.rec.workMinutes else '—' }}</td>
+      {% if can_edit %}<td style="text-align:right"><button class="btn btn-ghost btn-sm" data-open="edit-att" data-fill='{{ {"userId": r.userId, "date": c.date.isoformat(), "who": r.name ~ " · " ~ c.date.isoformat(), "checkIn": c.rec.checkIn|local("%H:%M") if c.rec and c.rec.checkIn else "", "checkOut": c.rec.checkOut|local("%H:%M") if c.rec and c.rec.checkOut else "", "note": (c.rec.note or "") if c.rec else "", "status": ""}|tojson }}'>Edit</button></td>{% endif %}</tr>
+  {% endfor %}</tbody></table>{% if not view.rows %}{{ empty('No team members') }}{% endif %}</div>
+</div>
+
+{% elif tab == 'report' and team %}
+<div class="card">
+  <form class="toolbar" method="get"><input type="hidden" name="tab" value="report">
+    <input class="input" type="month" name="month" value="{{ ym }}" style="max-width:170px" onchange="this.form.submit()">
+    <select class="input" name="user" style="max-width:190px" onchange="this.form.submit()"><option value="">All employees</option>{% for m in members %}<option value="{{ m.id }}" {{ 'selected' if m.id == uid }}>{{ m.name }}</option>{% endfor %}</select>
+    {% if departments %}<select class="input" name="dept" style="max-width:180px" onchange="this.form.submit()"><option value="">All departments</option>{% for d in departments %}<option {{ 'selected' if d == dept }}>{{ d }}</option>{% endfor %}</select>{% endif %}
+    <div class="row wrap xs muted grow end">{% for s in ['PRESENT','HALF_DAY','ABSENT','LEAVE'] %}<span class="row gap-xs"><span class="cell s-{{ s }}" style="width:16px;height:16px">{{ SHORT[s] }}</span>{{ s|replace('_',' ')|title }}</span>{% endfor %}
+      {% if can_export %}<a class="btn btn-secondary btn-sm" href="{{ url_for('attendance_export', month=ym, user=uid) }}"><i data-lucide="download"></i>CSV</a>{% endif %}</div>
+  </form>
+  <div class="table-wrap"><table class="matrix" style="border-collapse:collapse">
+    <thead><tr class="muted"><th class="sticky">Employee</th>{% for d in view.days %}<th style="width:28px">{{ d.day }}</th>{% endfor %}<th style="padding:0 8px">P</th><th style="padding:0 8px">H</th><th style="padding:0 8px">A</th><th style="padding:0 8px">L</th><th style="padding:0 8px">Late</th><th style="padding:0 12px">Hours</th></tr></thead>
+    <tbody>{% for r in view.rows %}
+      <tr style="border-top:1px solid var(--border)"><td class="sticky bold">{{ r.name }}</td>
+        {% for d in view.days %}{% set c = r.cells[loop.index0] if loop.index0 < r.cells|length else none %}
+          <td>{% if c %}{% set tip = d.isoformat() ~ ': ' ~ c.status|replace('_',' ')|title ~ ((' · ' ~ (c.rec.checkIn|local('%H:%M')) ~ '–' ~ (c.rec.checkOut|local('%H:%M'))) if c.rec and c.rec.checkIn else '') %}
+            {% if can_edit %}<button class="cell s-{{ c.status }} {{ 'late-dot' if c.rec and c.rec.isLate }}" style="cursor:pointer" title="{{ tip }}" data-open="edit-att" data-fill='{{ {"userId": r.userId, "date": d.isoformat(), "who": r.name ~ " · " ~ d.isoformat(), "checkIn": c.rec.checkIn|local("%H:%M") if c.rec and c.rec.checkIn else "", "checkOut": c.rec.checkOut|local("%H:%M") if c.rec and c.rec.checkOut else "", "note": (c.rec.note or "") if c.rec else "", "status": ""}|tojson }}'>{{ SHORT.get(c.status, '') }}</button>
+            {% else %}<span class="cell s-{{ c.status }} {{ 'late-dot' if c.rec and c.rec.isLate }}" title="{{ tip }}">{{ SHORT.get(c.status, '') }}</span>{% endif %}
+          {% else %}<span class="cell"></span>{% endif %}</td>
+        {% endfor %}
+        <td>{{ r.totals.present }}</td><td>{{ r.totals.half }}</td><td class="text-red">{{ r.totals.absent }}</td><td>{{ r.totals.leave }}</td><td style="color:var(--amber)">{{ r.totals.late }}</td><td style="padding:0 12px;white-space:nowrap">{{ fmt_minutes(r.totals.minutes) }}</td></tr>
+    {% endfor %}</tbody></table>{% if not view.rows %}{{ empty('No data for this period') }}{% endif %}</div>
+</div>
+
+{% elif tab == 'history' %}
+{% set me = view.me %}
+<div class="card">
+  <form class="toolbar" method="get"><input type="hidden" name="tab" value="history"><input class="input" type="month" name="month" value="{{ ym }}" style="max-width:170px" onchange="this.form.submit()">
+    {% if me %}<div class="row wrap gap-xs"><span class="badge b-green">Present {{ me.totals.present }}</span><span class="badge b-amber">Half {{ me.totals.half }}</span><span class="badge b-red">Absent {{ me.totals.absent }}</span><span class="badge b-indigo">Leave {{ me.totals.leave }}</span><span class="badge b-amber">Late {{ me.totals.late }}</span><span class="badge">{{ fmt_minutes(me.totals.minutes) }}</span></div>{% endif %}
+    {% if can_export %}<a class="btn btn-secondary btn-sm ml-auto" href="{{ url_for('attendance_export', month=ym, user=ctx.user.id) }}"><i data-lucide="download"></i>CSV</a>{% endif %}
+  </form>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Date</th><th>Status</th><th>In</th><th>Out</th><th>Worked</th><th>Note</th></tr></thead><tbody>
+  {% for c in (me.cells if me else [])|reverse if c.status not in ['UPCOMING','NOT_JOINED'] %}
+    <tr><td style="white-space:nowrap">{{ c.date.strftime('%a %d %b') }}</td><td><span class="row gap-xs">{{ status_badge(c.status) }}{% if c.rec and c.rec.isLate %}<span class="badge b-amber">Late {{ c.rec.lateMinutes }}m</span>{% endif %}</span></td>
+      <td>{{ c.rec.checkIn|local('%H:%M') if c.rec else '—' }}</td><td>{{ c.rec.checkOut|local('%H:%M') if c.rec else '—' }}</td><td>{{ fmt_minutes(c.rec.workMinutes) if c.rec and c.rec.workMinutes else '—' }}</td><td class="muted">{{ (c.rec.note or '') if c.rec else '' }}</td></tr>
+  {% endfor %}</tbody></table></div>
+</div>
+
+{% else %}
+<div class="card">
+  <div class="card-h"><div><h3>{{ 'Correction requests' if can_approve else 'My correction requests' }}</h3><p class="xs muted">{{ 'Approving updates the attendance record and notifies the employee.' if can_approve else 'Ask your manager to fix a missed or wrong check-in/out.' }}</p></div>
+    {% if can_check %}<button class="btn btn-primary btn-sm" data-open="new-corr"><i data-lucide="plus"></i>Request correction</button>{% endif %}</div>
+  {% if view.corrections %}<ul class="list">{% for c in view.corrections %}
+    <li class="row wrap">
+      <div style="flex:1;min-width:240px"><div class="row wrap"><b>{{ c.name }}</b><span class="muted">{{ c.date }}</span>{{ status_badge(c.status) }}</div>
+        <div class="xs muted">Requested: in {{ c.requestedCheckIn|local('%H:%M') if c.requestedCheckIn else '—' }} · out {{ c.requestedCheckOut|local('%H:%M') if c.requestedCheckOut else '—' }} — {{ c.reason }}</div>
+        {% if c.reviewer %}<div class="xs muted">Reviewed by {{ c.reviewer }}{% if c.reviewNote %}: {{ c.reviewNote }}{% endif %}</div>{% endif %}</div>
+      {% if c.status == 'PENDING' %}<div class="row">
+        {% if can_approve and c.userId != ctx.user.id %}
+          <form method="post" action="{{ url_for('correction_review', cid=c.id) }}">{{ csrf() }}<input type="hidden" name="action" value="APPROVE"><button class="btn btn-primary btn-sm"><i data-lucide="check"></i>Approve</button></form>
+          <form method="post" action="{{ url_for('correction_review', cid=c.id) }}" data-prompt="Reason for rejecting (optional)">{{ csrf() }}<input type="hidden" name="action" value="REJECT"><button class="btn btn-secondary btn-sm"><i data-lucide="x"></i>Reject</button></form>
+        {% endif %}
+        {% if c.userId == ctx.user.id %}<form method="post" action="{{ url_for('correction_review', cid=c.id) }}">{{ csrf() }}<input type="hidden" name="action" value="CANCEL"><button class="btn btn-ghost btn-sm">Cancel</button></form>{% endif %}
+      </div>{% endif %}
+    </li>{% endfor %}</ul>
+  {% else %}{{ empty('No correction requests') }}{% endif %}
+</div>
+{% endif %}
+
+{% if can_edit %}
+<dialog id="edit-att"><form method="post" action="{{ url_for('attendance_edit') }}">{{ csrf() }}<input type="hidden" name="userId"><input type="hidden" name="date">
+  <div class="d-h"><div><h2 data-text="who"></h2><p class="small muted">Manual changes are recorded in the activity log and the employee is notified.</p></div><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field"><label>Check in</label><input class="input" type="time" name="checkIn"></div>
+    <div class="field"><label>Check out</label><input class="input" type="time" name="checkOut"></div>
+    <div class="field span2"><label>Status override</label><select class="input" name="status"><option value="">Auto (computed from times)</option><option value="PRESENT">Present</option><option value="HALF_DAY">Half day</option><option value="ABSENT">Absent</option><option value="LEAVE">Leave</option></select></div>
+    <div class="field span2"><label>Note</label><input class="input" name="note"></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Save</button></div>
+</form></dialog>
+{% endif %}
+{% if can_check %}
+<dialog id="new-corr"><form method="post" action="{{ url_for('correction_create') }}">{{ csrf() }}
+  <div class="d-h"><h2>Request attendance correction</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field span2"><label>Date <span class="req">*</span></label><input class="input" type="date" name="date" max="{{ today.isoformat() }}" required></div>
+    <div class="field"><label>Correct check-in</label><input class="input" type="time" name="checkIn"></div>
+    <div class="field"><label>Correct check-out</label><input class="input" type="time" name="checkOut"></div>
+    <div class="field span2"><label>Reason <span class="req">*</span></label><textarea class="input" name="reason" required minlength="5"></textarea></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Submit</button></div>
+</form></dialog>
+{% endif %}
+{% endblock %}

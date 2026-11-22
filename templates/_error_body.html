@@ -1,0 +1,5 @@
+<div class="empty" style="padding:80px 24px">
+  <p style="font-size:48px;font-weight:600" class="muted">{{ code }}</p>
+  <p>{{ message if code != 404 else "This page doesn't exist or you don't have access." }}</p>
+  <a href="{{ url_for('home') }}" class="btn btn-secondary mt">Go home</a>
+</div>

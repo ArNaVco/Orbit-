@@ -1,0 +1,38 @@
+{% macro avatar(name, size=28) -%}
+<span class="avatar" style="width:{{ size }}px;height:{{ size }}px;font-size:{{ (size * 0.38)|int }}px;background:hsl({{ name|hue }} 55% 50%)">{{ name|initials }}</span>
+{%- endmacro %}
+{% macro status_badge(s) -%}
+{% set tones = {'ACTIVE':'b-green','SUSPENDED':'b-red','PENDING':'b-amber','APPROVED':'b-green','REJECTED':'b-red','CANCELLED':'','PRESENT':'b-green','IN_PROGRESS':'b-blue','ABSENT':'b-red','HALF_DAY':'b-amber','LEAVE':'b-indigo','WEEKEND':'','UPCOMING':'','NOT_JOINED':''} %}
+{% set labels = {'IN_PROGRESS':'Checked in','HALF_DAY':'Half day','WEEKEND':'Off','UPCOMING':'Not yet','NOT_JOINED':'Not joined'} %}
+<span class="badge {{ tones.get(s, '') }}">{{ labels.get(s, s|replace('_', ' ')|title) }}</span>
+{%- endmacro %}
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
+{% macro pager(page, pages, total, endpoint, kw={}) -%}
+{% if pages > 1 %}
+<div class="row between small muted" style="padding:10px 16px;border-top:1px solid var(--border)">
+  <span>{{ total }} total · page {{ page + 1 }} of {{ pages }}</span>
+  <div class="row gap-xs">
+    {% set prev = args_without('page', page=page - 1) %}{% set _ = prev.update(kw) %}{% set nxt = args_without('page', page=page + 1) %}{% set _ = nxt.update(kw) %}
+    {% if page > 0 %}<a class="btn btn-secondary btn-sm" href="{{ url_for(endpoint, **prev) }}"><i data-lucide="chevron-left"></i></a>{% endif %}
+    {% if page < pages - 1 %}<a class="btn btn-secondary btn-sm" href="{{ url_for(endpoint, **nxt) }}"><i data-lucide="chevron-right"></i></a>{% endif %}
+  </div>
+</div>
+{% endif %}
+{%- endmacro %}
+{% macro empty(title, desc='', icon='inbox') -%}
+<div class="empty"><div style="display:inline-flex;padding:12px;border-radius:99px;background:var(--surface-2);margin-bottom:10px"><i data-lucide="{{ icon }}"></i></div>
+<p class="t">{{ title }}</p>{% if desc %}<p class="small">{{ desc }}</p>{% endif %}</div>
+{%- endmacro %}
+{% macro field_input(f, value=None, existing_files=[]) -%}
+{% set t = f.type %}
+{% if t == 'TEXTAREA' %}<textarea class="input" name="{{ f.key }}" rows="4" {{ 'required' if f.required }} placeholder="{{ f.placeholder or '' }}">{{ value or '' }}</textarea>
+{% elif t == 'DROPDOWN' %}<select class="input" name="{{ f.key }}" {{ 'required' if f.required }}><option value="">Select…</option>{% for o in f.options %}<option {{ 'selected' if value == o }}>{{ o }}</option>{% endfor %}</select>
+{% elif t == 'CHECKBOX' %}<label class="row" style="height:36px"><input type="checkbox" name="{{ f.key }}" {{ 'checked' if value }}> {{ f.label }}{% if f.required %}<span class="req">*</span>{% endif %}</label>
+{% elif t == 'FILE' %}
+  {% for x in existing_files %}<label class="row small" style="border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:6px"><input type="checkbox" name="{{ f.key }}__keep" value="{{ x.id }}" checked><i data-lucide="paperclip"></i><a class="link trunc" href="{{ url_for('file_download', fid=x.id) }}" target="_blank">{{ x.name }}</a><span class="muted ml-auto xs">keep</span></label>{% endfor %}
+  <input class="input" style="padding-top:6px" type="file" name="{{ f.key }}" multiple>
+{% else %}
+  {% set types = {'NUMBER':'number','DATE':'date','TIME':'time','DATETIME':'datetime-local','EMAIL':'email','PHONE':'tel'} %}
+  <input class="input" name="{{ f.key }}" type="{{ types.get(t, 'text') }}" {{ 'step=any' if t == 'NUMBER' }} value="{{ value if value is not none else '' }}" {{ 'required' if f.required }} placeholder="{{ f.placeholder or '' }}">
+{% endif %}
+{%- endmacro %}

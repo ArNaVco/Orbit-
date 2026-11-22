@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_ui.html" import avatar, empty %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+{# Every widget below is gated on what the business has enabled and the user may see. #}
+<div class="page-h">
+  <div class="row">{{ avatar(ctx.business.name, 44) }}<div><h1>Good {{ d.greeting }}, {{ ctx.user.name.split()[0] }}</h1>
+    <p class="muted">{{ ctx.business.name }}{% if ctx.business.industry %} · {{ ctx.business.industry }}{% endif %} · {{ ctx.role.name if ctx.role else 'Super Admin' }}</p></div></div>
+  <div class="actions">
+    {% if ctx.can('attendance','VIEW') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('attendance') }}"><i data-lucide="clock"></i>Attendance</a>{% endif %}
+    {% if ctx.can('leave','CREATE') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('leave') }}#new"><i data-lucide="plus"></i>Request leave</a>{% endif %}
+    {% if ctx.can('scheduling','CREATE') %}<a class="btn btn-secondary btn-sm" href="{{ url_for('schedule') }}"><i data-lucide="calendar-days"></i>New event</a>{% endif %}
+    {% if ctx.can('employees','CREATE') == 'ALL' %}<a class="btn btn-secondary btn-sm" href="{{ url_for('employees') }}"><i data-lucide="users"></i>Add member</a>{% endif %}
+    {% for m in custom if ctx.can(m.key, 'CREATE') %}{% if loop.index <= 3 %}<a class="btn btn-secondary btn-sm" href="{{ url_for('records', key=m.key) }}#new"><i data-lucide="{{ m.icon|kebab }}"></i>{{ m.name }}</a>{% endif %}{% endfor %}
+  </div>
+</div>
+
+{% if ctx.can('attendance','CREATE') %}<div class="mb">{% with my_today = d.my_today %}{% include "_checkin.html" %}{% endwith %}</div>{% endif %}
+
+<div class="grid g4">
+  {% if d.members is defined %}<div class="card stat"><div class="row between small muted">Total employees<i data-lucide="users"></i></div><div class="v">{{ d.members }}</div></div>{% endif %}
+  {% if d.team is defined %}<div class="card stat"><div class="row between small muted">Present today<i data-lucide="check-circle-2"></i></div><div class="v">{{ d.present }}/{{ d.team }}</div><div class="xs muted">{{ d.late ~ ' late' if d.late else 'No late arrivals' }}</div></div>{% endif %}
+  {% if d.pending is defined %}<div class="card stat"><div class="row between small muted">{{ d.pending_label }}<i data-lucide="clipboard-check"></i></div><div class="v">{{ d.pending + (d.pending_corr or 0) }}</div>{% if d.pending_corr %}<div class="xs muted">incl. {{ d.pending_corr }} corrections</div>{% endif %}</div>{% endif %}
+  {% if d.open_tasks is defined %}<div class="card stat"><div class="row between small muted">Open tasks<i data-lucide="check-square"></i></div><div class="v">{{ d.open_tasks }}</div></div>{% endif %}
+  {% if d.upcoming is defined %}<div class="card stat"><div class="row between small muted">Events this week<i data-lucide="calendar-days"></i></div><div class="v">{{ d.upcoming|length }}</div></div>{% endif %}
+</div>
+
+<div class="grid g3 mt">
+  {% if d.chart %}
+  <div class="card span2"><div class="card-h"><div><h3>Attendance overview</h3><p class="xs muted">Last 7 days</p></div><a class="link small" href="{{ url_for('attendance', tab='report') }}">Details</a></div><div class="card-b" style="height:250px"><canvas id="att-chart"></canvas></div></div>
+  {% endif %}
+  {% if d.upcoming is defined %}
+  <div class="card {{ '' if d.chart else 'span2' }}"><div class="card-h"><h3>Upcoming schedule</h3><a class="link small" href="{{ url_for('schedule') }}">Calendar</a></div>
+    {% if d.upcoming %}<ul class="list">{% for e in d.upcoming %}<li class="row" style="align-items:flex-start"><span style="margin-top:7px;width:8px;height:8px;border-radius:50%;background:{{ e.color }};flex-shrink:0"></span>
+      <span style="min-width:0"><span class="bold trunc" style="display:block">{{ e.title }}</span><span class="xs muted">{{ e.occ|local('%a %d %b' if e.allDay else '%a %d %b, %H:%M') }}{% if e.location %} · {{ e.location }}{% endif %}</span></span></li>{% endfor %}</ul>
+    {% else %}{{ empty('Nothing in the next 7 days', icon='calendar-days') }}{% endif %}</div>
+  {% endif %}
+  {% if d.records %}
+  <div class="card"><div class="card-h"><h3>Recently added records</h3></div>
+    <ul class="list">{% for r in d.records %}{% set m = d.mods_by_id[r.moduleId] %}
+      <li><a class="row" href="{{ url_for('record_detail', key=m.key, rid=r.id) }}"><i data-lucide="{{ m.icon|kebab }}" class="muted"></i>
+        <span style="min-width:0"><span class="trunc" style="display:block">{% for v in r.data.values() if v is string and v %}{% if loop.first %}{{ v }}{% endif %}{% else %}Entry{% endfor %}</span><span class="xs muted">{{ m.name }} · {{ r.creator or '—' }} · {{ r.createdAt|date }}</span></span></a></li>
+    {% endfor %}</ul></div>
+  {% endif %}
+  {% if d.logs is defined %}
+  <div class="card"><div class="card-h"><h3>Recent activity</h3><a class="link small" href="{{ url_for('tenant_logs') }}">All activity</a></div>
+    {% if d.logs %}<ul class="list">{% for l in d.logs %}<li><div>{{ l.description }}</div><div class="xs muted">{{ l.userName or 'System' }} · {{ l.createdAt|local }}</div></li>{% endfor %}</ul>{% else %}{{ empty('No activity yet', icon='history') }}{% endif %}</div>
+  {% endif %}
+  <div class="card"><div class="card-h"><h3>Notifications</h3><a class="link small" href="{{ url_for('notifications') }}">View all</a></div>
+    {% if d.notifications %}<ul class="list">{% for n in d.notifications %}<li class="row" style="align-items:flex-start"><span style="margin-top:7px;width:8px;height:8px;border-radius:50%;flex-shrink:0;background:{{ 'transparent' if n.readAt else 'var(--primary)' }}"></span><span><span style="display:block">{{ n.title }}</span><span class="xs muted">{{ n.createdAt|local }}</span></span></li>{% endfor %}</ul>
+    {% else %}{{ empty("You're all caught up", icon='bell') }}{% endif %}</div>
+</div>
+{% if ctx.modules|length <= 1 %}<div class="card card-b mt" style="text-align:center"><span class="muted">No features are enabled for your role yet.</span> <span class="badge">Contact your administrator</span></div>{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if d.chart %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  Chart.defaults.font.family='Inter';Chart.defaults.color=css('--muted');Chart.defaults.borderColor=css('--border');
+  const s={{ d.chart.series|tojson }},colors={'Present':'#10b981','Half day':'#f59e0b','Leave':'#6366f1','Absent':'#ef4444'};
+  new Chart(document.getElementById('att-chart'),{type:'bar',data:{labels:{{ d.chart.labels|tojson }},datasets:Object.keys(s).map(k=>({label:k,data:s[k],backgroundColor:colors[k],maxBarThickness:28}))},
+    options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,beginAtZero:true,ticks:{precision:0}}}}});
+</script>
+{% endif %}
+{% endblock %}

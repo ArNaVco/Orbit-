@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, field_input %}
+{% block title %}{{ m.name }} entry{% endblock %}
+{% block content %}
+<a href="{{ url_for('records', key=m.key) }}" class="row xs muted mb" style="gap:4px"><i data-lucide="arrow-left" style="width:12px;height:12px"></i>{{ m.name }}</a>
+<div class="page-h"><div><h1>{{ m.name }} entry</h1><p class="small muted">Added by {{ r.creator or 'unknown' }} · {{ r.createdAt|local }}{% if r.updater and r.updatedAt != r.createdAt %} · last edited by {{ r.updater }} {{ r.updatedAt|local }}{% endif %}</p></div>
+  <div class="actions">
+    {% if can_update and not edit %}<a class="btn btn-secondary" href="?edit=1"><i data-lucide="pencil"></i>Edit</a>{% endif %}
+    {% if can_delete %}<form method="post" data-confirm="Delete this entry? It and its attachments are removed. The deletion is recorded in the activity log.">{{ csrf() }}<input type="hidden" name="action" value="delete"><button class="btn btn-danger"><i data-lucide="trash-2"></i>Delete</button></form>{% endif %}
+  </div></div>
+{% if edit and can_update %}
+<form method="post" enctype="multipart/form-data" class="card">{{ csrf() }}
+  <div class="card-b grid g2">
+    {% for f in fields %}{% set v = r.data.get(f.key) %}
+    <div class="field {{ 'span2' if f.type in ['TEXTAREA','FILE'] }}">
+      {% if f.type != 'CHECKBOX' %}<label>{{ f.label }}{% if f.required %} <span class="req">*</span>{% endif %}</label>{% endif %}
+      {{ field_input(f, v, v if f.type == 'FILE' and v else []) }}{% if f.helpText %}<span class="hint">{{ f.helpText }}</span>{% endif %}
+    </div>{% endfor %}
+  </div>
+  <div class="card-f"><a class="btn btn-secondary" href="{{ url_for('record_detail', key=m.key, rid=r.id) }}">Cancel</a><button class="btn btn-primary">Save changes</button></div>
+</form>
+{% else %}
+<div class="card card-b"><dl class="grid g2" style="margin:0;row-gap:18px">
+  {% for f in fields %}{% set v = r.data.get(f.key) %}
+  <div class="{{ 'span2' if f.type in ['TEXTAREA','FILE'] }}"><dt class="xs muted">{{ f.label }}</dt>
+    <dd style="margin:2px 0 0;white-space:pre-wrap">{% if f.type == 'FILE' %}{% for x in v or [] %}<a class="link row gap-xs" style="display:inline-flex;margin-right:12px" href="{{ url_for('file_download', fid=x.id) }}" target="_blank"><i data-lucide="paperclip"></i>{{ x.name }}</a>{% else %}—{% endfor %}{% else %}{{ v|display(f.type) }}{% endif %}</dd></div>
+  {% endfor %}
+</dl></div>
+{% endif %}
+{% endblock %}

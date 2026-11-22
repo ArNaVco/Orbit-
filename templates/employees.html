@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, avatar, empty %}
+{% block title %}{{ ctx.name('employees', 'Employees') }}{% endblock %}
+{% block content %}
+{% set can_create = ctx.can('employees','CREATE') == 'ALL' %}{% set can_update = ctx.can('employees','UPDATE') == 'ALL' %}{% set can_delete = ctx.can('employees','DELETE') == 'ALL' %}
+<div class="page-h"><div><h1>{{ ctx.name('employees', 'Employees') }}</h1><p class="muted">{{ rows|selectattr('isActive')|list|length }} active members</p></div>
+  <div class="actions">
+    {% if ctx.can('employees','EXPORT') %}<a class="btn btn-secondary" href="{{ url_for('employees', **args_without('page', format='csv')) }}"><i data-lucide="download"></i>CSV</a>{% endif %}
+    {% if can_create %}<button class="btn btn-primary" data-open="add-emp"><i data-lucide="user-plus"></i>Add member</button>{% endif %}
+  </div></div>
+<div class="card">
+  <form class="toolbar" method="get">
+    <input class="input" name="q" value="{{ search }}" placeholder="Search name, email, department…" style="max-width:280px">
+    {% if departments %}<select class="input" name="dept" style="max-width:180px" onchange="this.form.submit()"><option value="">All departments</option>{% for d in departments %}<option {{ 'selected' if d == dept }}>{{ d }}</option>{% endfor %}</select>{% endif %}
+    <button class="btn btn-secondary">Search</button>
+  </form>
+  <div class="table-wrap"><table class="table"><thead><tr><th data-sort>Name</th><th data-sort>Role</th><th data-sort>Department</th><th data-sort>Title</th><th data-sort>Status</th><th></th></tr></thead><tbody>
+  {% for r in rows %}{% set manageable = r.userId != ctx.user.id and r.rank < ctx.rank %}
+    <tr><td><div class="row">{{ avatar(r.name) }}<div><div class="bold">{{ r.name }}{% if r.userId == ctx.user.id %} <span class="xs muted">(you)</span>{% endif %}</div><div class="xs muted">{{ r.email }}</div></div></div></td>
+      <td><span class="badge {{ 'b-indigo' if r.rank >= 100 }}">{{ r.role }}</span></td><td>{{ r.department or '—' }}</td><td>{{ r.jobTitle or '—' }}</td>
+      <td>{% if can_update and manageable %}<form method="post" action="{{ url_for('employee_update', mid=r.id) }}">{{ csrf() }}<input type="hidden" name="action" value="toggle"><button class="switch {{ 'on' if r.isActive }}" aria-label="Toggle active"></button></form>
+        {% else %}<span class="badge {{ 'b-green' if r.isActive else 'b-red' }}">{{ 'Active' if r.isActive else 'Inactive' }}</span>{% endif %}</td>
+      <td style="text-align:right;white-space:nowrap">{% if manageable %}
+        {% if can_update %}<button class="btn btn-ghost btn-icon" data-open="edit-emp" data-fill='{{ {"mid": r.id, "name": r.name, "roleId": r.roleId, "department": r.department or "", "jobTitle": r.jobTitle or ""}|tojson }}' aria-label="Edit"><i data-lucide="pencil"></i></button>{% endif %}
+        {% if can_delete %}<form method="post" action="{{ url_for('employee_update', mid=r.id) }}" style="display:inline" data-confirm="Remove {{ r.name }} from the team? They lose access immediately; past records stay.">{{ csrf() }}<input type="hidden" name="action" value="delete"><button class="btn btn-ghost btn-icon text-red" aria-label="Remove"><i data-lucide="trash-2"></i></button></form>{% endif %}
+      {% endif %}</td></tr>
+  {% endfor %}</tbody></table>{% if not rows %}{{ empty('No matching members', icon='users') }}{% endif %}</div>
+</div>
+<datalist id="depts">{% for d in departments %}<option value="{{ d }}">{% endfor %}</datalist>
+{% if can_create %}
+<dialog id="add-emp"><form method="post">{{ csrf() }}
+  <div class="d-h"><h2>Add team member</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field"><label>Full name <span class="req">*</span></label><input class="input" name="name" required></div>
+    <div class="field"><label>Email <span class="req">*</span></label><input class="input" type="email" name="email" required></div>
+    <div class="field"><label>Role</label><select class="input" name="roleId">{% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.key == 'employee' }}>{{ r.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Department</label><input class="input" name="department" list="depts"></div>
+    <div class="field"><label>Job title</label><input class="input" name="jobTitle"></div>
+    <div class="field"><label>Initial password</label><input class="input" type="password" name="password"><span class="hint">Blank = email a set-password link</span></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Add</button></div>
+</form></dialog>
+{% endif %}
+{% if can_update %}
+<dialog id="edit-emp"><form method="post" id="edit-emp-form">{{ csrf() }}
+  <div class="d-h"><h2>Edit <span data-text="name"></span></h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field"><label>Role</label><select class="input" name="roleId">{% for r in roles %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Department</label><input class="input" name="department" list="depts"></div>
+    <div class="field span2"><label>Job title</label><input class="input" name="jobTitle"></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Save</button></div>
+</form></dialog>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script>
+document.querySelectorAll('[data-open=edit-emp]').forEach(b=>b.addEventListener('click',()=>{document.getElementById('edit-emp-form').action='/app/employees/'+JSON.parse(b.dataset.fill).mid}));
+</script>{% endblock %}

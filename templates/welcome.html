@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, avatar %}
+{% block title %}Welcome{% endblock %}
+{% block content %}
+<div class="card" style="max-width:460px;margin:40px auto;padding:24px;text-align:center">
+  <i data-lucide="building-2" style="width:40px;height:40px" class="muted"></i>
+  <h1 class="mt">Hi {{ shell.user.name.split()[0] }}</h1>
+  {% if memberships %}
+    <p class="muted" style="margin-top:4px">Choose a workspace to continue.</p>
+    <div class="card mt" style="text-align:left">
+      {% for m in memberships %}
+      <form method="post" action="{{ url_for('switch_workspace') }}" style="border-bottom:1px solid var(--border)">{{ csrf() }}<input type="hidden" name="businessId" value="{{ m.id }}">
+        <button class="btn btn-ghost w-full" style="height:auto;padding:10px 12px;justify-content:flex-start">{{ avatar(m.name) }}<span style="flex:1;text-align:left"><b>{{ m.name }}</b><br><span class="xs muted">{{ m.role }}</span></span><i data-lucide="chevron-right"></i></button>
+      </form>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted mt">You're not part of any workspace yet. Ask your business administrator to add <b>{{ shell.user.email }}</b> to their team, or register your own business.</p>
+  {% endif %}
+</div>
+{% endblock %}
