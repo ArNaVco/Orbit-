@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_ui.html" import status_badge %}
+{% block title %}Admin overview{% endblock %}
+{% block content %}
+<div class="page-h"><div><h1>Platform overview</h1><p class="muted">Everything happening across every workspace.</p></div></div>
+<div class="grid g4">
+  <div class="card stat"><div class="row between small muted">Businesses<i data-lucide="building-2"></i></div><div class="v">{{ stats.businesses }}</div><div class="xs muted">{{ stats.active }} active</div></div>
+  <div class="card stat"><div class="row between small muted">Users<i data-lucide="users"></i></div><div class="v">{{ stats.users }}</div></div>
+  <div class="card stat"><div class="row between small muted">Active modules<i data-lucide="boxes"></i></div><div class="v">{{ stats.modules }}</div></div>
+  <div class="card stat"><div class="row between small muted">Logins (14 days)<i data-lucide="activity"></i></div><div class="v">{{ logins }}</div></div>
+</div>
+<div class="grid g3 mt">
+  <div class="card span2"><div class="card-h"><div><h3>Sign-ins</h3><p class="xs muted">Successful logins per day</p></div></div><div class="card-b" style="height:240px"><canvas id="trend"></canvas></div></div>
+  <div class="card"><div class="card-h"><h3>Businesses by plan</h3></div><div class="card-b" style="height:240px"><canvas id="plans"></canvas></div></div>
+</div>
+<div class="grid g2 mt">
+  <div class="card"><div class="card-h"><h3>Newest businesses</h3><a class="link small" href="{{ url_for('admin_businesses') }}">View all</a></div>
+    <ul class="list">{% for b in newest %}<li><a class="row between" href="{{ url_for('admin_business', bid=b.id) }}"><b>{{ b.name }}</b><span class="row small muted">{{ b.members }} users {{ status_badge(b.status) }}</span></a></li>{% endfor %}</ul></div>
+  <div class="card"><div class="card-h"><h3>Recent activity</h3><a class="link small" href="{{ url_for('admin_logs') }}">Audit logs</a></div>
+    <ul class="list">{% for l in recent %}<li><div>{{ l.description }}</div><div class="xs muted">{{ l.userName or 'System' }}{% if l.businessName %} · {{ l.businessName }}{% endif %} · {{ l.createdAt|local }}</div></li>{% endfor %}</ul></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  Chart.defaults.font.family = 'Inter'; Chart.defaults.color = css('--muted'); Chart.defaults.borderColor = css('--border');
+  new Chart(document.getElementById('trend'), {type:'line', data:{labels:{{ trend.labels|tojson }}, datasets:[{data:{{ trend.values|tojson }}, borderColor:css('--primary'), backgroundColor:'rgba(99,102,241,.15)', fill:true, tension:.35, pointRadius:0}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true, ticks:{precision:0}}, x:{grid:{display:false}}}}});
+  new Chart(document.getElementById('plans'), {type:'doughnut', data:{labels:{{ plans|map(attribute='name')|list|tojson }}, datasets:[{data:{{ plans|map(attribute='n')|list|tojson }}, backgroundColor:['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444'], borderWidth:0}]},
+    options:{maintainAspectRatio:false, cutout:'65%', plugins:{legend:{position:'bottom'}}}});
+</script>
+{% endblock %}
