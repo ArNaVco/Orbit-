@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, field_input %}
+{% block title %}{{ m.name }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('admin_modules') }}" class="row xs muted mb" style="gap:4px"><i data-lucide="arrow-left" style="width:12px;height:12px"></i>Properties & modules</a>
+<div class="page-h">
+  <div class="row"><span style="padding:10px;border-radius:8px;background:var(--surface-2);display:inline-flex"><i data-lucide="{{ m.icon|kebab }}"></i></span>
+    <div><h1>{{ m.name }}</h1><p class="xs muted">key: <span class="mono">{{ m.key }}</span> · <span class="badge">{{ 'Built-in' if m.kind == 'BUILTIN' else 'Custom' }}</span></p></div></div>
+  {% if not m.isCore %}<div class="actions"><form method="post" action="{{ url_for('admin_module_delete', mid=m.id) }}" data-confirm="Delete {{ m.name }}? This permanently deletes the module, its form and every entry all businesses have submitted to it.">{{ csrf() }}<button class="btn btn-danger"><i data-lucide="trash-2"></i>Delete</button></form></div>{% endif %}
+</div>
+<div class="grid g3">
+  <div class="span2 col" style="gap:16px">
+    <form method="post" class="card">{{ csrf() }}
+      <div class="card-h"><h3>Settings</h3></div>
+      <div class="card-b grid g2">
+        <div class="field"><label>Name</label><input class="input" name="name" value="{{ m.name }}" required></div>
+        <div class="field"><label>Icon</label><select class="input" name="icon">{% for i in ICONS %}<option {{ 'selected' if i == m.icon }}>{{ i }}</option>{% endfor %}</select></div>
+        <div class="field span2"><label>Description</label><textarea class="input" name="description">{{ m.description or '' }}</textarea></div>
+        <div class="field"><label>Sort order</label><input class="input" type="number" name="sortOrder" value="{{ m.sortOrder }}"></div>
+        <div class="row wrap" style="gap:18px;align-self:end;padding-bottom:6px">
+          {% for fld, l in [('isEnabled','Enabled'),('isMandatory','Mandatory'),('isDefault','Default')] %}<label class="row small"><input type="checkbox" name="{{ fld }}" {{ 'checked' if m[fld] }}>{{ l }}</label>{% endfor %}
+        </div>
+      </div>
+      <div class="card-f"><button class="btn btn-primary">Save settings</button></div>
+    </form>
+    {% if m.kind == 'CUSTOM' %}
+    <form method="post" action="{{ url_for('admin_module_fields', mid=m.id) }}" class="card" id="builder-form">{{ csrf() }}
+      <input type="hidden" name="fields_json" id="fields_json">
+      <div class="card-h"><div><h3>Form builder</h3><p class="xs muted">Fields shown when people add an entry. Existing entries keep their data when you change the form.</p></div>
+        <button type="button" class="btn btn-secondary btn-sm" data-open="preview" onclick="renderPreview()">Preview</button></div>
+      <div id="fields"></div>
+      <div style="padding:12px"><button type="button" class="btn btn-secondary btn-sm" onclick="addField()"><i data-lucide="plus"></i>Add field</button></div>
+      <div class="card-f"><button class="btn btn-primary">Save form</button></div>
+    </form>
+    {% else %}
+    <div class="card card-b muted">Built-in properties have a dedicated interface. Use <a class="link" href="{{ url_for('admin_roles') }}">Roles & permissions</a> to control who can view, create, update, approve or export.</div>
+    {% endif %}
+  </div>
+  <form method="post" action="{{ url_for('admin_module_assign', mid=m.id) }}" class="card" style="height:fit-content">{{ csrf() }}
+    <div class="card-h"><div><h3>Assigned businesses</h3><p class="xs muted">{{ 'Mandatory — on for every business.' if m.isMandatory else 'Which businesses can use this property.' }}</p></div></div>
+    <div style="max-height:420px;overflow-y:auto">
+      {% for b in businesses %}<label class="row" style="padding:8px 16px;border-bottom:1px solid var(--border)"><input type="checkbox" name="businesses" value="{{ b.id }}" {{ 'checked' if m.isMandatory or b.id in assigned }} {{ 'disabled' if m.isMandatory }}><span style="flex:1">{{ b.name }}</span>{% if b.status != 'ACTIVE' %}<span class="badge b-red">Suspended</span>{% endif %}</label>{% endfor %}
+    </div>
+    {% if not m.isMandatory %}<div class="card-f" style="justify-content:space-between"><button type="button" class="btn btn-ghost btn-sm" onclick="document.querySelectorAll('[name=businesses]').forEach(c=>c.checked=!c.checked)">Invert</button><button class="btn btn-primary btn-sm">Save</button></div>{% endif %}
+  </form>
+</div>
+<dialog id="preview" class="lg"><div class="d-h"><h2>Preview: new {{ m.name }} entry</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div><div class="d-b grid g2" id="preview-body"></div></dialog>
+{% endblock %}
+{% block scripts %}
+{% if m.kind == 'CUSTOM' %}
+<script>
+  const TYPES = {{ FIELD_LABELS|tojson }};
+  let fields = {{ fields|tojson }}.map(f=>({key:f.key,label:f.label,type:f.type,required:f.required,options:f.options||[],helpText:f.helpText||'',showInTable:f.showInTable,saved:true}));
+  const box = document.getElementById('fields');
+  const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function slug(s){return s.toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)}
+  function render(){
+    box.innerHTML = fields.map((f,i)=>`
+      <div class="row" style="align-items:flex-start;padding:12px;border-bottom:1px solid var(--border)">
+        <i data-lucide="grip-vertical" class="muted" style="margin-top:10px"></i>
+        <div class="grid" style="flex:1;grid-template-columns:1.4fr 1fr 1fr;gap:8px">
+          <input class="input" placeholder="Label" value="${esc(f.label)}" oninput="upd(${i},'label',this.value)">
+          <select class="input" onchange="upd(${i},'type',this.value);render()">${Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${k===f.type?'selected':''}>${v}</option>`).join('')}</select>
+          <input class="input mono" placeholder="key" value="${esc(f.key)}" ${f.saved?'disabled title="Keys of saved fields are fixed"':''} oninput="upd(${i},'key',this.value)">
+          ${f.type==='DROPDOWN'?`<input class="input" style="grid-column:span 3" placeholder="Options, comma separated" value="${esc(f.options.join(', '))}" oninput="upd(${i},'options',this.value.split(',').map(s=>s.trim()).filter(Boolean))">`:''}
+          <input class="input" style="grid-column:span 2" placeholder="Help text (optional)" value="${esc(f.helpText)}" oninput="upd(${i},'helpText',this.value)">
+          <div class="row small" style="gap:14px"><label class="row gap-xs"><input type="checkbox" ${f.required?'checked':''} onchange="upd(${i},'required',this.checked)">Required</label><label class="row gap-xs"><input type="checkbox" ${f.showInTable?'checked':''} onchange="upd(${i},'showInTable',this.checked)">In table</label></div>
+        </div>
+        <div class="col">
+          <button type="button" class="btn btn-ghost btn-icon" ${i===0?'disabled':''} onclick="move(${i},-1)" aria-label="Move up"><i data-lucide="arrow-up"></i></button>
+          <button type="button" class="btn btn-ghost btn-icon" ${i===fields.length-1?'disabled':''} onclick="move(${i},1)" aria-label="Move down"><i data-lucide="arrow-down"></i></button>
+          <button type="button" class="btn btn-ghost btn-icon text-red" onclick="fields.splice(${i},1);render()" aria-label="Remove"><i data-lucide="trash-2"></i></button>
+        </div>
+      </div>`).join('') || '<p class="empty small">No fields yet. Add the first one.</p>';
+    lucide.createIcons();
+  }
+  function upd(i,k,v){fields[i][k]=v; if(k==='label'&&!fields[i].saved){fields[i].key=slug(v)||fields[i].key; const keyInput=box.children[i].querySelectorAll('input')[1]; if(keyInput) keyInput.value=fields[i].key}}
+  function move(i,d){const [x]=fields.splice(i,1);fields.splice(i+d,0,x);render()}
+  function addField(){fields.push({key:'field_'+(fields.length+1),label:'',type:'TEXT',required:false,options:[],helpText:'',showInTable:true});render()}
+  document.getElementById('builder-form').addEventListener('submit',()=>{document.getElementById('fields_json').value=JSON.stringify(fields)});
+  function renderPreview(){
+    const types={NUMBER:'number',DATE:'date',TIME:'time',DATETIME:'datetime-local',EMAIL:'email',PHONE:'tel',FILE:'file'};
+    document.getElementById('preview-body').innerHTML=fields.map(f=>{
+      let ctl = f.type==='TEXTAREA'?'<textarea class="input"></textarea>':f.type==='DROPDOWN'?`<select class="input"><option>Select…</option>${f.options.map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:
+        f.type==='CHECKBOX'?`<label class="row"><input type="checkbox"> ${esc(f.label)}</label>`:`<input class="input" type="${types[f.type]||'text'}">`;
+      return `<div class="field ${['TEXTAREA','FILE'].includes(f.type)?'span2':''}">${f.type==='CHECKBOX'?'':`<label>${esc(f.label)}${f.required?' <span class="req">*</span>':''}</label>`}${ctl}${f.helpText?`<span class="hint">${esc(f.helpText)}</span>`:''}</div>`}).join('')||'<p class="muted">No fields.</p>';
+  }
+  render();
+</script>
+{% endif %}
+{% endblock %}

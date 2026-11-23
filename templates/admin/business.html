@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, avatar, status_badge %}
+{% block title %}{{ b.name }}{% endblock %}
+{% block content %}
+<a href="{{ url_for('admin_businesses') }}" class="row xs muted mb" style="gap:4px"><i data-lucide="arrow-left" style="width:12px;height:12px"></i>Businesses</a>
+<div class="page-h">
+  <div class="row">{{ avatar(b.name, 40) }}<div><h1 class="row">{{ b.name }} {{ status_badge(b.status) }}</h1><p class="xs muted">{{ b.slug }} · {{ b.plan or 'No plan' }} · created {{ b.createdAt|date }}</p></div></div>
+  <div class="actions">
+    <form method="post" action="{{ url_for('switch_workspace') }}">{{ csrf() }}<input type="hidden" name="businessId" value="{{ b.id }}"><button class="btn btn-secondary"><i data-lucide="external-link"></i>Open workspace</button></form>
+    <form method="post" action="{{ url_for('admin_business_status', bid=b.id) }}" data-confirm="{{ 'Suspend this business? Members are signed out and blocked until it is reactivated. Data is kept.' if b.status == 'ACTIVE' else 'Reactivate this business?' }}">{{ csrf() }}
+      <button class="btn {{ 'btn-secondary' if b.status == 'ACTIVE' else 'btn-primary' }}">{{ 'Suspend' if b.status == 'ACTIVE' else 'Reactivate' }}</button></form>
+    <button class="btn btn-danger btn-icon" data-open="del-biz" aria-label="Delete"><i data-lucide="trash-2"></i></button>
+  </div>
+</div>
+<div class="tabs">{% for t, l in [('overview','Overview'),('properties','Properties'),('members','Members (' ~ members|length ~ ')'),('activity','Activity')] %}<a href="?tab={{ t }}" class="{{ 'on' if tab == t }}">{{ l }}</a>{% endfor %}</div>
+
+{% if tab == 'overview' %}
+<div class="grid g4 mb">
+  <div class="card stat"><div class="small muted">Members</div><div class="v">{{ members|selectattr('isActive')|list|length }}</div><div class="xs muted">{{ members|length }} total</div></div>
+  <div class="card stat"><div class="small muted">Custom records</div><div class="v">{{ counts.records }}</div></div>
+  <div class="card stat"><div class="small muted">Attendance entries</div><div class="v">{{ counts.attendance }}</div></div>
+  <div class="card stat"><div class="small muted">Schedules</div><div class="v">{{ counts.schedules }}</div></div>
+</div>
+<form method="post" action="{{ url_for('admin_business_update', bid=b.id) }}" class="grid g3">{{ csrf() }}
+  <div class="card span2"><div class="card-h"><h3>Business information & attendance policy</h3></div>
+    <div class="card-b grid g2">
+      <div class="field"><label>Name</label><input class="input" name="name" value="{{ b.name }}" required></div>
+      <div class="field"><label>Industry</label><input class="input" name="industry" value="{{ b.industry or '' }}"></div>
+      <div class="field"><label>Email</label><input class="input" type="email" name="email" value="{{ b.email or '' }}"></div>
+      <div class="field"><label>Phone</label><input class="input" name="phone" value="{{ b.phone or '' }}"></div>
+      <div class="field span2"><label>Address</label><input class="input" name="address" value="{{ b.address or '' }}"></div>
+      <div class="field"><label>Timezone</label><input class="input" name="timezone" value="{{ b.timezone }}"></div>
+      <div class="field"><label>Work start time</label><input class="input" type="time" name="workStartTime" value="{{ b.workStartTime }}"></div>
+      <div class="field"><label>Late grace (minutes)</label><input class="input" type="number" min="0" name="lateGraceMinutes" value="{{ b.lateGraceMinutes }}"></div>
+      <div class="field"><label>Half day below (minutes worked)</label><input class="input" type="number" min="0" name="halfDayMinutes" value="{{ b.halfDayMinutes }}"></div>
+      <div class="field span2"><label>Working days</label><div class="row wrap gap-xs">{% for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %}<label class="chip {{ 'on' if loop.index0 in (b.workDays or []) }}"><input type="checkbox" name="workDays" value="{{ loop.index0 }}" {{ 'checked' if loop.index0 in (b.workDays or []) }} hidden onchange="this.parentNode.classList.toggle('on',this.checked)">{{ d }}</label>{% endfor %}</div></div>
+    </div>
+    <div class="card-f"><button class="btn btn-primary">Save changes</button></div>
+  </div>
+  <div class="card" style="height:fit-content"><div class="card-h"><h3>Subscription</h3></div>
+    <div class="card-b col" style="gap:14px">
+      <div class="field"><label>Plan</label><select class="input" name="planId"><option value="">No plan</option>{% for p in plans %}<option value="{{ p.id }}" {{ 'selected' if p.id == b.planId }}>{{ p.name }} (max {{ p.maxUsers }} users)</option>{% endfor %}</select></div>
+      <div class="field"><label>Plan renews / expires</label><input class="input" type="date" name="planExpiresAt" value="{{ b.planExpiresAt.date().isoformat() if b.planExpiresAt else '' }}"></div>
+      <button class="btn btn-secondary w-full" style="justify-content:center">Update subscription</button>
+    </div>
+  </div>
+</form>
+
+{% elif tab == 'properties' %}
+<form method="post" action="{{ url_for('admin_business_modules', bid=b.id) }}" class="card">{{ csrf() }}
+  <div class="card-h"><div><h3>Enabled properties</h3><p class="xs muted">Toggle what this business can use and optionally rename a property just for them. Changes apply instantly to their navigation, dashboard and server-side access.</p></div><button class="btn btn-primary">Save</button></div>
+  {% for m in modules %}
+  <div class="grid" style="grid-template-columns:1.2fr 1fr 1fr auto;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)">
+    <div class="row"><span style="padding:6px;border-radius:6px;background:var(--surface-2);display:inline-flex"><i data-lucide="{{ m.icon|kebab }}"></i></span>
+      <div><div class="bold">{{ m.name }}</div><div class="row gap-xs"><span class="badge">{{ 'Built-in' if m.kind == 'BUILTIN' else 'Custom' }}</span>{% if m.isMandatory %}<span class="badge b-indigo">Mandatory</span>{% endif %}{% if not m.isEnabled %}<span class="badge b-red">Disabled globally</span>{% endif %}</div></div></div>
+    <input class="input" name="name_{{ m.id }}" placeholder="Custom name (optional)" value="{{ m.customName or '' }}" {{ 'disabled' if m.isMandatory }}>
+    <input class="input" name="desc_{{ m.id }}" placeholder="Custom description (optional)" value="{{ m.customDescription or '' }}" {{ 'disabled' if m.isMandatory }}>
+    <label class="row small"><input type="checkbox" name="enabled" value="{{ m.id }}" {{ 'checked' if m.isMandatory or m.biz_enabled }} {{ 'disabled' if m.isMandatory }}> Enabled</label>
+  </div>
+  {% endfor %}
+</form>
+
+{% elif tab == 'members' %}
+<div class="card">
+  <div class="card-h"><div><h3>Members</h3><p class="xs muted">Assign users to this business and control their role.</p></div><button class="btn btn-primary" data-open="add-member"><i data-lucide="user-plus"></i>Add member</button></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Person</th><th>Role</th><th>Department</th><th>Access</th><th></th></tr></thead><tbody>
+  {% for m in members %}
+    <tr><td><div class="row">{{ avatar(m.name) }}<div><div class="bold">{{ m.name }}</div><div class="xs muted">{{ m.email }}</div></div></div></td>
+      <td><form method="post" action="{{ url_for('admin_member_update', mid=m.id) }}">{{ csrf() }}<select class="input" name="roleId" style="height:32px;width:170px" onchange="this.form.submit()">{% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.id == m.roleId }}>{{ r.name }}</option>{% endfor %}</select></form></td>
+      <td class="muted">{{ m.department or '—' }}</td>
+      <td><form method="post" action="{{ url_for('admin_member_update', mid=m.id) }}">{{ csrf() }}<input type="hidden" name="isActive" value="{{ '0' if m.isActive else '1' }}"><button class="switch {{ 'on' if m.isActive }}" aria-label="Toggle access"></button></form></td>
+      <td style="text-align:right"><form method="post" action="{{ url_for('admin_member_update', mid=m.id) }}" data-confirm="Remove {{ m.name }}? They lose access to this workspace. Their records are kept.">{{ csrf() }}<input type="hidden" name="delete" value="1"><button class="btn btn-ghost btn-icon text-red" aria-label="Remove"><i data-lucide="trash-2"></i></button></form></td></tr>
+  {% endfor %}</tbody></table></div>
+</div>
+<dialog id="add-member"><form method="post" action="{{ url_for('admin_business_add_member', bid=b.id) }}">{{ csrf() }}
+  <div class="d-h"><h2>Add member</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field"><label>Name <span class="req">*</span></label><input class="input" name="name" required></div>
+    <div class="field"><label>Email <span class="req">*</span></label><input class="input" type="email" name="email" required><span class="hint">Existing users are linked; new ones are created</span></div>
+    <div class="field"><label>Role</label><select class="input" name="roleId">{% for r in roles %}<option value="{{ r.id }}" {{ 'selected' if r.key == 'employee' }}>{{ r.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Department</label><input class="input" name="department"></div>
+    <div class="field span2"><label>Initial password</label><input class="input" type="password" name="password"><span class="hint">Blank = email a set-password link</span></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Add</button></div>
+</form></dialog>
+
+{% else %}
+<div class="card"><div class="card-h"><h3>Recent activity</h3><a class="link small" href="{{ url_for('admin_logs', businessId=b.id) }}">Full audit log</a></div>
+  <ul class="list">{% for l in logs %}<li><div>{{ l.description }}</div><div class="xs muted">{{ l.userName or 'System' }} · {{ l.createdAt|local }}</div></li>{% else %}<li class="empty small">No activity yet</li>{% endfor %}</ul></div>
+{% endif %}
+
+<dialog id="del-biz" class="sm"><form method="post" action="{{ url_for('admin_business_delete', bid=b.id) }}">{{ csrf() }}
+  <div class="d-h"><div><h2>Delete business permanently</h2><p class="small muted mt" style="margin-top:4px">Deletes the workspace and all its records, attendance, schedules and files. Audit log entries are kept. This cannot be undone.</p></div></div>
+  <div class="d-b"><div class="field"><label>Type "{{ b.name }}" to confirm</label><input class="input" name="confirm" required autocomplete="off"></div></div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-danger">Delete forever</button></div>
+</form></dialog>
+{% endblock %}

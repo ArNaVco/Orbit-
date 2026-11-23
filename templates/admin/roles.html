@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf %}
+{% block title %}Roles & permissions{% endblock %}
+{% block content %}
+<div class="page-h"><div><h1>Roles & permissions</h1><p class="muted">Platform roles apply to every business. Custom roles can be platform-wide or scoped to one business. All checks are enforced on the server.</p></div></div>
+<div class="grid" style="grid-template-columns:280px 1fr">
+  <div class="card" style="height:fit-content">
+    <div class="card-h"><h3>Roles</h3><button class="btn btn-primary btn-sm" data-open="new-role"><i data-lucide="plus"></i>New</button></div>
+    <div style="padding:6px">{% for r in roles %}
+      <a href="{{ url_for('admin_roles', role=r.id) }}" class="row" style="padding:8px 10px;border-radius:6px;{{ 'background:var(--surface-2)' if role and r.id == role.id }}">
+        <div style="flex:1;min-width:0"><div class="row bold gap-xs">{{ r.name }}{% if r.fullAccess %}<i data-lucide="lock" class="muted" style="width:12px;height:12px"></i>{% endif %}</div><div class="xs muted trunc">{{ r.business or 'All businesses' }} · {{ r.members }} members</div></div>
+        {% if r.isSystem %}<span class="badge">System</span>{% endif %}</a>
+    {% endfor %}</div>
+  </div>
+  {% if role %}
+  <form method="post" action="{{ url_for('admin_role_permissions', rid=role.id) }}" class="card">{{ csrf() }}
+    <div class="card-h"><div><h3>{{ role.name }}</h3><p class="xs muted">{{ role.description or '' }}</p></div>
+      <div class="row">{% if not role.isSystem %}<button type="submit" form="del-role" class="btn btn-ghost btn-icon text-red" aria-label="Delete role"><i data-lucide="trash-2"></i></button>{% endif %}
+        {% if not role.fullAccess %}<button class="btn btn-primary">Save permissions</button>{% endif %}</div></div>
+    {% if role.fullAccess %}
+      <p class="card-b muted">The Business Owner role always has full access to every property enabled for their business. It can't be restricted.</p>
+    {% else %}
+      <div class="row wrap small muted" style="padding:8px 16px;border-bottom:1px solid var(--border);gap:12px">Click a cell to cycle:
+        <span class="row gap-xs"><span class="perm">—</span>none</span><span class="row gap-xs"><span class="perm OWN">OWN</span>own records</span><span class="row gap-xs"><span class="perm ALL">ALL</span>all records</span>
+        <span class="ml-auto">Rank {{ role.rank }} — can manage members with a lower rank</span></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Property</th>{% for a in ACTIONS %}<th style="text-align:center">{{ a|title }}</th>{% endfor %}</tr></thead><tbody>
+      {% for row in matrix %}
+        <tr><td><span class="row"><i data-lucide="{{ row.m.icon|kebab }}" class="muted"></i>{{ row.m.name }}</span></td>
+        {% for a in ACTIONS %}{% set p = row.cells.get(a) %}
+          <td style="text-align:center;padding:6px">{% if p %}{% set sc = grants.get(p.id, '') %}<input type="hidden" name="perm_{{ p.id }}" value="{{ sc }}"><button type="button" class="perm {{ sc }}" onclick="cyclePerm(this)" aria-label="{{ row.m.name }} {{ a }}">{{ sc or '—' }}</button>{% else %}<span class="muted">·</span>{% endif %}</td>
+        {% endfor %}</tr>
+      {% endfor %}</tbody></table></div>
+    {% endif %}
+  </form>
+  {% if not role.isSystem %}<form id="del-role" method="post" action="{{ url_for('admin_role_delete', rid=role.id) }}" data-confirm="Delete role {{ role.name }}? Roles that still have members can't be deleted.">{{ csrf() }}</form>{% endif %}
+  {% endif %}
+</div>
+<dialog id="new-role"><form method="post">{{ csrf() }}
+  <div class="d-h"><h2>New role</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field"><label>Name <span class="req">*</span></label><input class="input" name="name" required placeholder="e.g. Shift Supervisor"></div>
+    <div class="field"><label>Rank (1–99)</label><input class="input" type="number" name="rank" min="1" max="99" value="30"><span class="hint">Owner 100 · Admin 80 · Manager 50 · Employee 10</span></div>
+    <div class="field span2"><label>Description</label><input class="input" name="description"></div>
+    <div class="field"><label>Available to</label><select class="input" name="businessId"><option value="">All businesses</option>{% for b in businesses %}<option value="{{ b.id }}">{{ b.name }} only</option>{% endfor %}</select></div>
+    <div class="field"><label>Copy permissions from</label><select class="input" name="copyFrom"><option value="">Start empty</option>{% for r in roles if not r.fullAccess %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Create role</button></div>
+</form></dialog>
+{% endblock %}
+{% block scripts %}<script>
+function cyclePerm(b){const i=b.previousElementSibling,next={'':'OWN','OWN':'ALL','ALL':''}[i.value];i.value=next;b.className='perm '+next;b.textContent=next||'—'}
+</script>{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, avatar, status_badge, empty %}
+{% block title %}Businesses{% endblock %}
+{% block content %}
+<div class="page-h"><div><h1>Businesses</h1><p class="muted">Every workspace on the platform.</p></div>
+  <div class="actions"><button class="btn btn-primary" data-open="new-biz"><i data-lucide="plus"></i>Add business</button></div></div>
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th data-sort>Business</th><th data-sort>Plan</th><th data-sort>Users</th><th data-sort>Modules</th><th data-sort>Status</th><th data-sort>Created</th></tr></thead>
+  <tbody>{% for b in rows %}
+    <tr class="row-link" data-href="{{ url_for('admin_business', bid=b.id) }}">
+      <td><div class="row">{{ avatar(b.name) }}<div><div class="bold">{{ b.name }}</div><div class="xs muted">{{ b.email or b.slug }}</div></div></div></td>
+      <td>{{ b.plan or '—' }}</td><td>{{ b.members }}</td><td>{{ b.modules }}</td><td>{{ status_badge(b.status) }}</td><td class="muted" data-v="{{ b.createdAt.isoformat() }}">{{ b.createdAt|date }}</td></tr>
+  {% endfor %}</tbody></table>
+  {% if not rows %}{{ empty('No businesses yet', icon='building-2') }}{% endif %}</div></div>
+
+<dialog id="new-biz" class="lg"><form method="post">{{ csrf() }}
+  <div class="d-h"><h2>Add business</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field span2"><label>Business name <span class="req">*</span></label><input class="input" name="name" required minlength="2"></div>
+    <div class="field"><label>Contact email</label><input class="input" type="email" name="email"></div>
+    <div class="field"><label>Industry</label><input class="input" name="industry"></div>
+    <div class="field"><label>Timezone</label><input class="input" name="timezone" value="UTC" placeholder="e.g. Asia/Kolkata"></div>
+    <div class="field"><label>Plan</label><select class="input" name="planId"><option value="">No plan</option>{% for p in plans %}<option value="{{ p.id }}" {{ 'selected' if loop.first }}>{{ p.name }}</option>{% endfor %}</select></div>
+    <div class="span2"><p class="label" style="margin-bottom:8px">Enabled properties</p>
+      <div class="grid g2 gap-sm">{% for m in modules %}<label class="row small" style="border:1px solid var(--border);border-radius:6px;padding:6px 10px"><input type="checkbox" name="modules" value="{{ m.id }}" {{ 'checked' if m.isDefault }}>{{ m.name }}</label>{% endfor %}</div></div>
+    <p class="span2 bold" style="border-top:1px solid var(--border);padding-top:14px">Business owner <span class="muted" style="font-weight:400">(optional)</span></p>
+    <div class="field"><label>Owner name</label><input class="input" name="ownerName"></div>
+    <div class="field"><label>Owner email</label><input class="input" type="email" name="ownerEmail"></div>
+    <div class="field span2"><label>Initial password</label><input class="input" type="password" name="ownerPassword"><span class="hint">Leave blank to email a set-password link</span></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Create business</button></div>
+</form></dialog>
+{% endblock %}

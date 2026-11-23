@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf %}
+{% block title %}Properties & modules{% endblock %}
+{% block content %}
+<div class="page-h"><div><h1>Properties & modules</h1><p class="muted">Create and control every feature businesses can use. Built-in properties have dedicated screens; custom modules are generated from the form you design.</p></div>
+  <div class="actions"><button class="btn btn-primary" data-open="new-mod"><i data-lucide="plus"></i>New custom module</button></div></div>
+{% for kind, title in [('BUILTIN', 'Built-in properties'), ('CUSTOM', 'Custom modules')] %}
+<div class="card mb">
+  <div class="card-h"><h3>{{ title }}</h3></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Module</th><th>Enabled</th><th>Mandatory</th><th>Default</th><th>Usage</th></tr></thead><tbody>
+  {% for m in rows if m.kind == kind %}
+    <tr><td><a href="{{ url_for('admin_module', mid=m.id) }}" class="row"><span style="padding:8px;border-radius:8px;background:var(--surface-2);display:inline-flex"><i data-lucide="{{ m.icon|kebab }}"></i></span><span><b>{{ m.name }}</b><br><span class="xs muted">{{ m.description or m.key }}</span></span></a></td>
+      {% for fld in ['isEnabled', 'isMandatory', 'isDefault'] %}
+      <td><form method="post" action="{{ url_for('admin_module_toggle', mid=m.id) }}">{{ csrf() }}<input type="hidden" name="field" value="{{ fld }}"><button class="switch {{ 'on' if m[fld] }}" aria-label="{{ fld }}"></button></form></td>
+      {% endfor %}
+      <td class="xs muted">{{ m.businesses }} businesses{% if kind == 'CUSTOM' %}<br>{{ m.fields }} fields · {{ m.records }} records{% endif %}</td></tr>
+  {% endfor %}</tbody></table></div>
+</div>
+{% endfor %}
+<p class="xs muted"><b>Enabled</b> is a global switch. <b>Mandatory</b> forces it on for every business. <b>Default</b> turns it on for newly registered businesses.</p>
+<dialog id="new-mod"><form method="post">{{ csrf() }}
+  <div class="d-h"><h2>New custom module</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field"><label>Name <span class="req">*</span></label><input class="input" name="name" id="nm-name" required placeholder="e.g. Vehicle Log"></div>
+    <div class="field"><label>Key <span class="req">*</span></label><input class="input mono" name="key" id="nm-key" required pattern="[a-z][a-z0-9_]{1,40}"><span class="hint">Used in URLs and permissions</span></div>
+    <div class="field"><label>Icon</label><select class="input" name="icon">{% for i in ICONS %}<option>{{ i }}</option>{% endfor %}</select></div>
+    <div class="field span2"><label>Description</label><textarea class="input" name="description"></textarea></div>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Create & design form</button></div>
+</form></dialog>
+{% endblock %}
+{% block scripts %}<script>document.getElementById('nm-name').addEventListener('input',e=>{document.getElementById('nm-key').value=e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40)})</script>{% endblock %}

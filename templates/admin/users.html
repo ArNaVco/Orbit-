@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_ui.html" import csrf, avatar, empty %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="page-h"><div><h1>Users</h1><p class="muted">Every account on the platform, across all businesses.</p></div>
+  <div class="actions"><button class="btn btn-primary" data-open="new-user"><i data-lucide="plus"></i>Create user</button></div></div>
+<div class="card">
+  <form class="toolbar" method="get">
+    <input class="input" name="q" value="{{ search }}" placeholder="Search name or email…" style="max-width:260px">
+    <select class="input" name="filter" style="max-width:170px" onchange="this.form.submit()">{% for k, l in [('all','All users'),('admins','Super admins'),('inactive','Deactivated'),('unassigned','No business')] %}<option value="{{ k }}" {{ 'selected' if flt == k }}>{{ l }}</option>{% endfor %}</select>
+    <button class="btn btn-secondary">Search</button>
+  </form>
+  <div class="table-wrap"><table class="table"><thead><tr><th data-sort>User</th><th>Businesses</th><th data-sort>Status</th><th data-sort>Last login</th><th></th></tr></thead><tbody>
+  {% for u in users %}
+    <tr><td><div class="row">{{ avatar(u.name) }}<div><div class="row bold gap-xs">{{ u.name }}{% if u.isSuperAdmin %}<span class="badge b-indigo">Super admin</span>{% endif %}</div><div class="xs muted">{{ u.email }}</div></div></div></td>
+      <td><div class="row wrap gap-xs">{% for m in u.memberships %}<span class="badge {{ '' if m.active else 'b-red' }}">{{ m.business }} · {{ m.role }}</span>{% else %}<span class="muted">—</span>{% endfor %}</div></td>
+      <td><div class="row gap-xs">{% if u.isActive %}<span class="badge b-green">Active</span>{% else %}<span class="badge b-red">Deactivated</span>{% endif %}{% if not u.emailVerifiedAt %}<span class="badge b-amber">Unverified</span>{% endif %}</div></td>
+      <td class="small muted" data-v="{{ u.lastLoginAt.isoformat() if u.lastLoginAt else '' }}">{{ u.lastLoginAt|local if u.lastLoginAt else 'Never' }}</td>
+      <td><button class="btn btn-ghost btn-icon" data-open="edit-user" data-fill='{{ {"uid": u.id, "name": u.name, "email": u.email, "active": "Deactivate" if u.isActive else "Activate", "admin": "Remove super admin" if u.isSuperAdmin else "Make super admin"}|tojson }}' aria-label="Manage"><i data-lucide="more-horizontal"></i></button></td></tr>
+  {% endfor %}</tbody></table>{% if not users %}{{ empty('No users match') }}{% endif %}</div>
+</div>
+
+<dialog id="new-user"><form method="post">{{ csrf() }}
+  <div class="d-h"><h2>Create user</h2><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b grid g2">
+    <div class="field"><label>Name <span class="req">*</span></label><input class="input" name="name" required></div>
+    <div class="field"><label>Email <span class="req">*</span></label><input class="input" type="email" name="email" required></div>
+    <div class="field span2"><label>Password <span class="req">*</span></label><input class="input" type="password" name="password" required minlength="8"><span class="hint">8+ characters, a letter and a number</span></div>
+    <div class="field"><label>Assign to business</label><select class="input" name="businessId" id="nu-biz"><option value="">None</option>{% for b in businesses %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Role</label><select class="input" name="roleId" id="nu-role">{% for r in roles %}<option value="{{ r.id }}" data-biz="{{ r.businessId or '' }}">{{ r.name }}</option>{% endfor %}</select></div>
+    <div class="field"><label>Department</label><input class="input" name="department"></div>
+    <label class="row small span2"><input type="checkbox" name="isSuperAdmin">Grant super admin access</label>
+  </div>
+  <div class="d-f"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button class="btn btn-primary">Create</button></div>
+</form></dialog>
+
+<dialog id="edit-user">
+  <div class="d-h"><div><h2 data-text="name"></h2><p class="small muted" data-text="email"></p></div><button class="icon-btn" data-close><i data-lucide="x"></i></button></div>
+  <div class="d-b col" style="gap:16px">
+    <form method="post" id="eu-rename" class="row">{{ csrf() }}<input type="hidden" name="action" value="rename"><input class="input" name="name"><button class="btn btn-secondary">Rename</button></form>
+    <div class="row wrap">
+      <form method="post" class="eu">{{ csrf() }}<input type="hidden" name="action" value="toggle_active"><button class="btn btn-secondary" data-text="active"></button></form>
+      <form method="post" class="eu">{{ csrf() }}<input type="hidden" name="action" value="toggle_admin"><button class="btn btn-secondary" data-text="admin"></button></form>
+      <form method="post" class="eu">{{ csrf() }}<input type="hidden" name="action" value="reset_email"><button class="btn btn-secondary"><i data-lucide="mail"></i>Email reset link</button></form>
+    </div>
+    <form method="post" class="eu row" style="border:1px solid var(--border);border-radius:8px;padding:10px">{{ csrf() }}<input type="hidden" name="action" value="password">
+      <i data-lucide="key-round"></i><input class="input" type="password" name="newPassword" placeholder="Set a new password" minlength="8" required><button class="btn btn-secondary">Set</button></form>
+    <form method="post" class="eu" data-confirm="Delete this user permanently? Consider deactivating instead.">{{ csrf() }}<input type="hidden" name="action" value="delete"><button class="btn btn-danger"><i data-lucide="trash-2"></i>Delete user</button></form>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+  // point every form in the edit dialog at the chosen user
+  document.querySelectorAll('[data-open=edit-user]').forEach(b=>b.addEventListener('click',()=>{const uid=JSON.parse(b.dataset.fill).uid;document.querySelectorAll('#edit-user form').forEach(f=>f.action='/admin/users/'+uid)}));
+  const biz=document.getElementById('nu-biz'),role=document.getElementById('nu-role');
+  function filterRoles(){[...role.options].forEach(o=>o.hidden=!!o.dataset.biz&&o.dataset.biz!==biz.value);role.disabled=!biz.value}
+  biz.addEventListener('change',filterRoles);filterRoles();
+</script>
+{% endblock %}
